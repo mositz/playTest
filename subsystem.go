@@ -9,6 +9,7 @@ import (
 	"path"
 	"syscall"
 	"fmt"
+	"strconv"
 )
 
 type subsystem struct {
@@ -19,6 +20,7 @@ type subsystem struct {
 	thresholdValue string
 	cgroupPath string
 }
+
 //type ErrorF func() string
 //func (self ErrorF) Error() string { return self() }
 
@@ -35,18 +37,20 @@ func (u *subsystem) set() error{
 		if line[len(line)-1] == u.name {
 			preLine :=strings.Split(line[0]," ")
 			 cg := path.Join(preLine[4],u.underPath)
-			 if _ ,err :=  os.Stat(cg); err != nil||os.IsNotExist(err) {
-				 if err := os.Mkdir(cg,755); err ==nil {
-					 fileName := path.Join(cg , u.cgroupRelativeFile)
-					 u.cgroupPath = cg
-					 log.Error("11" + path.Join(u.cgroupPath, "tasks")+":" + u.cgroupPath)
-					 return ioutil.WriteFile(fileName, []byte(u.thresholdValue), 775)
+			 u.cgroupPath = cg
+			 fileName := path.Join(cg , u.cgroupRelativeFile)
+			 _ ,err :=  os.Stat(cg)
+			 if err != nil||os.IsNotExist(err) {
+				 if err := os.Mkdir(cg,0755); err ==nil {
+					 log.Info(fmt.Sprintf("create new  file %s and write thresholdValue %s", fileName, u.thresholdValue))
+					 return ioutil.WriteFile(fileName, []byte(u.thresholdValue), 0775)
 				 }else{
 				 	return err;
 				 }
-			 }else{
-				 u.cgroupPath = cg
-				 log.Error("11" + path.Join(u.cgroupPath, "tasks")+":" + u.cgroupPath)
+			 }
+			 if err == nil {
+				 log.Info(fmt.Sprintf("write thresholdValue %s abount fileName %s",u.thresholdValue, fileName))
+				 return ioutil.WriteFile(fileName, []byte(u.thresholdValue), 0775)
 			 }
 		}
 	}
@@ -59,7 +63,7 @@ func (u *subsystem) apply(pid int) error{
 		return fmt.Errorf("%s is null", u.cgroupPath);
 	}
 	log.Info(path.Join(u.cgroupPath, "tasks"),fmt.Sprintf("%d",pid))
-	return ioutil.WriteFile(path.Join(u.cgroupPath, "tasks"), []byte(fmt.Sprintf("%d",pid)), 775)
+	return ioutil.WriteFile(path.Join(u.cgroupPath, "tasks"), []byte(strconv.Itoa(pid)), 0775)
 }
 
 func (u *subsystem) delete() error{

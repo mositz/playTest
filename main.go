@@ -6,13 +6,30 @@ import (
 	"os"
 	"syscall"
 	"os/exec"
-	"fmt"
 )
 func main(){
 	app := cli.NewApp()
+	mountRoot := &mountRoot{
+		oldPath:"/root/busybox",
+	}
+	config := &config{}
 	app.Commands = []cli.Command{
 		{
 			Name:"run",
+			Flags:[]cli.Flag{
+				cli.BoolFlag{
+					Name:"ti",
+				},
+				cli.StringFlag{
+					Name:"m",
+				},
+				cli.StringFlag{
+					Name: "cpushare",
+				},
+				cli.StringFlag{
+					Name: "cpuset",
+				},
+			},
 			Action: func(context *cli.Context) {
 				initCmd, err := os.Readlink("/proc/self/exe")
 				if err != nil {
@@ -27,35 +44,38 @@ func main(){
 					Cloneflags: syscall.CLONE_NEWUTS | syscall.CLONE_NEWPID | syscall.CLONE_NEWNS |
 						syscall.CLONE_NEWNET | syscall.CLONE_NEWIPC,
 				}
-				cmd.Stdin = os.Stdin
-				cmd.Stdout = os.Stdout
-				cmd.Stderr = os.Stderr
+				if context.Bool("ti") {
+					cmd.Stdin = os.Stdin
+					cmd.Stdout = os.Stdout
+					cmd.Stderr = os.Stderr
+				}
+				cmd.Dir = mountRoot.oldPath
+
 				if err:=cmd.Start();err != nil {
-					log.Error("%s",err)
+					log.Error( err.Error())
 					return
 				}
-
 				subs := []subsystem{
 					{
 						mountInfo:"/proc/self/mountinfo",
 						name:"memory",
 						underPath:"testCgroup",
 						cgroupRelativeFile:"memory.limit_in_bytes",
-						thresholdValue:fmt.Sprintf("%d",1024*1024*100),
+						thresholdValue: config.getDefault(memory,context.String("m")).(string),
 					},
 					{
 						mountInfo:"/proc/self/mountinfo",
 						name:"cpu",
 						underPath:"testCgroup",
 						cgroupRelativeFile:"cpu.shares",
-						thresholdValue:fmt.Sprintf("%d",512),
+						thresholdValue:config.getDefault(cpu,  context.String("cpushare")).(string),
 					},
 					{
 						mountInfo:"/proc/self/mountinfo",
 						name:"cpuset",
 						underPath:"testCgroup",
 						cgroupRelativeFile:"cpuset.cpus",
-						thresholdValue:fmt.Sprintf("%s","0-1"),
+						thresholdValue:config.getDefault(cpuset,  context.String("cpuset")).(string),
 					},
 				}
 
@@ -64,6 +84,7 @@ func main(){
 					uu.set()
 					uu.apply(cmd.Process.Pid)
 				}
+
 				cmd.Wait()
 				os.Exit(-1)
 			},
@@ -74,8 +95,11 @@ func main(){
 				commond := context.Args().Get(0)
 				log.Infof("init command %s", commond)
 
-				defaultMountFlags := syscall.MS_NOEXEC | syscall.MS_NOSUID | syscall.MS_NODEV
-				syscall.Mount("proc", "/proc", "proc", uintptr(defaultMountFlags), "")
+				if err := mountRoot.mountNewRoot();err != nil{
+					log.Error(err.Error())
+				}
+				log.Info("mount finish" + commond)
+
 				argv := []string{commond}
 				syscall.Exec(commond, argv,os.Environ())
 			},
